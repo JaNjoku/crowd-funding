@@ -236,3 +236,106 @@
     )
   )
 )
+
+;; Public function to add campaign milestone
+(define-public (add-campaign-milestone 
+    (campaign-id uint) 
+    (title (string-utf8 100))
+    (description (string-utf8 500))
+    (target-amount uint)
+    (deadline uint))
+    (let
+        (
+            (campaign (unwrap! (map-get? campaigns { campaign-id: campaign-id }) (err err-not-found)))
+            (campaign-stat (default-to 
+                { unique-contributors: u0, avg-contribution: u0, largest-contribution: u0, updates-count: u0 }
+                (map-get? campaign-stats { campaign-id: campaign-id })))
+        )
+        ;; Verify caller is campaign owner
+        (asserts! (is-eq tx-sender (get owner campaign)) (err err-owner-only))
+        ;; Verify campaign is still active
+        (asserts! (< (current-time) (get deadline campaign)) (err err-deadline-passed))
+        
+        (ok (map-set campaign-milestones
+            { campaign-id: campaign-id, milestone-id: (get updates-count campaign-stat) }
+            {
+                title: title,
+                description: description,
+                target-amount: target-amount,
+                completed: false,
+                deadline: deadline
+            }))
+    )
+)
+
+;; Public function to post campaign update
+(define-public (post-campaign-update 
+    (campaign-id uint) 
+    (title (string-utf8 100))
+    (content (string-utf8 1000)))
+    (let
+        (
+            (campaign (unwrap! (map-get? campaigns { campaign-id: campaign-id }) (err err-not-found)))
+            (current-stats (default-to { unique-contributors: u0, avg-contribution: u0, largest-contribution: u0, updates-count: u0 } 
+                (map-get? campaign-stats { campaign-id: campaign-id })))
+        )
+        ;; Verify caller is campaign owner
+        (asserts! (is-eq tx-sender (get owner campaign)) (err err-owner-only))
+        
+        ;; Add update
+        (map-set campaign-updates
+            { campaign-id: campaign-id, update-id: (get updates-count current-stats) }
+            {
+                title: title,
+                content: content,
+                timestamp: (current-time)
+            })
+        
+        ;; Update stats
+        (ok (map-set campaign-stats
+            { campaign-id: campaign-id }
+            (merge current-stats { updates-count: (+ (get updates-count current-stats) u1) })))
+    )
+)
+
+
+;; Public function to report campaign
+(define-public (report-campaign 
+    (campaign-id uint) 
+    (reason (string-utf8 500)))
+    (let
+        (
+            (campaign (unwrap! (map-get? campaigns { campaign-id: campaign-id }) (err err-not-found)))
+        )
+        ;; Check if already reported by this user
+        (asserts! (is-none (map-get? campaign-reports { campaign-id: campaign-id, reporter: tx-sender })) (err err-already-reported))
+        
+        (ok (map-set campaign-reports
+            { campaign-id: campaign-id, reporter: tx-sender }
+            {
+                reason: reason,
+                timestamp: (current-time),
+                status: "PENDING"
+            }))
+    )
+)
+
+;; Public function to update minimum contribution
+(define-public (update-minimum-contribution (new-minimum uint))
+    (begin
+        (asserts! (is-owner) (err err-owner-only))
+        (var-set minimum-contribution new-minimum)
+        (ok true)
+    )
+)
+
+;; Public function to update platform fee
+(define-public (update-platform-fee (new-fee uint))
+    (begin
+        (asserts! (is-owner) (err err-owner-only))
+        (asserts! (<= new-fee u1000) (err err-invalid-amount)) ;; Max 10%
+        (var-set platform-fee-percentage new-fee)
+        (ok true)
+    )
+)
+
