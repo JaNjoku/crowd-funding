@@ -339,3 +339,27 @@
     )
 )
 
+;; Read-only function to get campaign update
+(define-read-only (get-campaign-update (campaign-id uint) (update-id uint))
+    (map-get? campaign-updates { campaign-id: campaign-id, update-id: update-id })
+)
+
+;; Read-only function to get campaign report status
+(define-read-only (get-campaign-report-status (campaign-id uint) (reporter principal))
+    (map-get? campaign-reports { campaign-id: campaign-id, reporter: reporter })
+)
+
+;; Public function to mark milestone as completed
+(define-public (complete-milestone (campaign-id uint) (milestone-id uint))
+    (let
+        (
+            (campaign (unwrap! (map-get? campaigns { campaign-id: campaign-id }) (err err-not-found)))
+            (milestone (unwrap! (map-get? campaign-milestones { campaign-id: campaign-id, milestone-id: milestone-id }) (err err-milestone-not-found)))
+        )
+        (asserts! (is-eq tx-sender (get owner campaign)) (err err-owner-only))
+        
+        (ok (map-set campaign-milestones
+            { campaign-id: campaign-id, milestone-id: milestone-id }
+            (merge milestone { completed: true })))
+    )
+)
